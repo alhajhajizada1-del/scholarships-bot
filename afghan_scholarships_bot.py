@@ -1,9 +1,8 @@
 """
 Afghanistan Scholarships Bot - Updated
-- Sign In flow: email → email password → full name → scholarships shown automatically
-- Log In flow: email → email password → welcome (no auto scholarships)
-- Profile button shows saved user info
-- Password prompt says "Enter your email password"
+Rules:
+- /start shows ONLY Sign In and Log In buttons
+- After successful Sign In or Log In → show Profile and Scholarships buttons
 """
 
 import logging
@@ -20,9 +19,10 @@ USERS_FILE = "users.json"
 CHOOSE_ACTION = 0
 SIGNIN_EMAIL = 1
 SIGNIN_PASSWORD = 2
-SIGNIN_USERNAME = 3
+SIGNIN_NAME = 3
 LOGIN_EMAIL = 4
 LOGIN_PASSWORD = 5
+LOGGED_IN = 6
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
@@ -45,10 +45,17 @@ def save_users(users):
     with open(USERS_FILE, "w") as f:
         json.dump(users, f, indent=2)
 
-def main_menu():
+# Menu shown BEFORE login — only Sign In and Log In
+def auth_menu():
     return ReplyKeyboardMarkup(
-        [["✍️ Sign In", "🔑 Log In"],
-         ["📚 Scholarships", "👤 Profile"]],
+        [["✍️ Sign In", "🔑 Log In"]],
+        resize_keyboard=True
+    )
+
+# Menu shown AFTER login — Profile and Scholarships
+def logged_in_menu():
+    return ReplyKeyboardMarkup(
+        [["📚 Scholarships", "👤 Profile"]],
         resize_keyboard=True
     )
 
@@ -65,19 +72,21 @@ async def send_scholarships(update: Update):
         msg,
         parse_mode="Markdown",
         disable_web_page_preview=True,
-        reply_markup=main_menu()
+        reply_markup=logged_in_menu()
     )
 
+# ── /start — show only auth menu ──
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🎓 *Welcome to Afghanistan Scholarships!*\n\n"
         "We help Afghan students find and apply for scholarships worldwide.\n\n"
-        "Please choose an option below:",
+        "Please *Sign In* or *Log In* to continue:",
         parse_mode="Markdown",
-        reply_markup=main_menu(),
+        reply_markup=auth_menu(),
     )
     return CHOOSE_ACTION
 
+# ── Choose Sign In or Log In ──
 async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
@@ -97,45 +106,14 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return LOGIN_EMAIL
 
-    elif text == "📚 Scholarships":
-        await send_scholarships(update)
-        return CHOOSE_ACTION
-
-    elif text == "👤 Profile":
-        user = update.effective_user
-        users = load_users()
-        # Find user by telegram ID
-        found = None
-        for email, data in users.items():
-            if data.get("telegram_id") == user.id:
-                found = (email, data)
-                break
-        if found:
-            email, data = found
-            await update.message.reply_text(
-                f"👤 *Your Profile*\n\n"
-                f"📛 Full Name: {data.get('full_name', 'N/A')}\n"
-                f"📧 Email: `{email}`\n"
-                f"🔗 Telegram: @{user.username or 'N/A'}\n"
-                f"🆔 Telegram ID: `{user.id}`\n"
-                f"🎓 Status: Active Member",
-                parse_mode="Markdown",
-                reply_markup=main_menu(),
-            )
-        else:
-            await update.message.reply_text(
-                "⚠️ You don't have a profile yet. Please Sign In first to create one.",
-                reply_markup=main_menu(),
-            )
-        return CHOOSE_ACTION
-
     else:
-        await update.message.reply_text("Please choose one of the options below:", reply_markup=main_menu())
+        await update.message.reply_text(
+            "Please choose Sign In or Log In to continue:",
+            reply_markup=auth_menu()
+        )
         return CHOOSE_ACTION
 
-
-# ── Sign In flow: email → email password → full name → scholarships ──
-
+# ── Sign In: email → password → name → logged in menu ──
 async def signin_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     email = update.message.text.strip()
     if "@" not in email or "." not in email:
@@ -145,7 +123,7 @@ async def signin_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if email in users:
         await update.message.reply_text(
             "⚠️ This email is already registered. Please use 🔑 Log In instead.",
-            reply_markup=main_menu()
+            reply_markup=auth_menu()
         )
         return CHOOSE_ACTION
     context.user_data["signin_email"] = email
@@ -159,9 +137,9 @@ async def signin_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return SIGNIN_PASSWORD
     context.user_data["signin_password"] = password
     await update.message.reply_text("👤 Almost done! Please enter your full name:")
-    return SIGNIN_USERNAME
+    return SIGNIN_NAME
 
-async def signin_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def signin_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     full_name = update.message.text.strip()
     email = context.user_data.get("signin_email")
     password = context.user_data.get("signin_password")
@@ -177,21 +155,23 @@ async def signin_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     save_users(users)
 
-    # Welcome message
+    # Store in session so Profile works
+    context.user_data["logged_in_email"] = email
+
+    # Welcome + show logged in menu
     await update.message.reply_text(
         f"🎉 *Registration Successful!*\n\n"
         f"👤 Full Name: {full_name}\n"
         f"📧 Email: `{email}`\n\n"
-        f"Welcome to Afghanistan Scholarships! "
-        f"Here are the latest opportunities for you:",
+        f"Welcome! You can now explore scholarships or view your profile:",
         parse_mode="Markdown",
-        reply_markup=main_menu(),
+        reply_markup=logged_in_menu(),
     )
 
-    # Show scholarships automatically after sign in
+    # Show scholarships automatically
     await send_scholarships(update)
 
-    # Notify admin with all details
+    # Notify admin
     await context.bot.send_message(
         chat_id=ADMIN_CHAT_ID,
         text=(
@@ -205,11 +185,9 @@ async def signin_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ),
         parse_mode="Markdown",
     )
-    return CHOOSE_ACTION
+    return LOGGED_IN
 
-
-# ── Log In flow: email → email password → welcome ──
-
+# ── Log In: email → password → logged in menu ──
 async def login_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["login_email"] = update.message.text.strip()
     await update.message.reply_text("Enter your email password:")
@@ -221,26 +199,28 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = load_users()
 
     if email not in users:
-        await update.message.reply_text("❌ No account found with that email.", reply_markup=main_menu())
+        await update.message.reply_text("❌ No account found with that email.", reply_markup=auth_menu())
         return CHOOSE_ACTION
 
     if users[email]["password"] != password:
-        await update.message.reply_text("❌ Incorrect password. Try again.", reply_markup=main_menu())
+        await update.message.reply_text("❌ Incorrect password. Try again.", reply_markup=auth_menu())
         return CHOOSE_ACTION
 
     user = update.effective_user
     full_name = users[email].get("full_name", user.first_name)
 
-    # Welcome back
+    # Store in session
+    context.user_data["logged_in_email"] = email
+
+    # Welcome back + show logged in menu
     await update.message.reply_text(
         f"✅ *Login Successful!*\n\n"
         f"👤 Name: {full_name}\n"
         f"📧 Email: `{email}`\n"
         f"🎓 Status: Active Member\n\n"
-        f"Welcome back to Afghanistan Scholarships!\n"
-        f"Use the buttons below to explore scholarships or view your profile.",
+        f"Welcome back! Explore scholarships or view your profile:",
         parse_mode="Markdown",
-        reply_markup=main_menu(),
+        reply_markup=logged_in_menu(),
     )
 
     # Notify admin
@@ -257,25 +237,63 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ),
         parse_mode="Markdown",
     )
-    return CHOOSE_ACTION
+    return LOGGED_IN
 
+# ── Logged in actions: Scholarships and Profile ──
+async def logged_in_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    user = update.effective_user
+    email = context.user_data.get("logged_in_email")
+
+    if text == "📚 Scholarships":
+        await send_scholarships(update)
+        return LOGGED_IN
+
+    elif text == "👤 Profile":
+        users = load_users()
+        if email and email in users:
+            data = users[email]
+            await update.message.reply_text(
+                f"👤 *Your Profile*\n\n"
+                f"📛 Full Name: {data.get('full_name', 'N/A')}\n"
+                f"📧 Email: `{email}`\n"
+                f"🔗 Telegram: @{user.username or 'N/A'}\n"
+                f"🆔 Telegram ID: `{user.id}`\n"
+                f"🎓 Status: Active Member",
+                parse_mode="Markdown",
+                reply_markup=logged_in_menu(),
+            )
+        else:
+            await update.message.reply_text(
+                "⚠️ Profile not found. Please /start and sign in again.",
+                reply_markup=auth_menu(),
+            )
+            return CHOOSE_ACTION
+        return LOGGED_IN
+
+    else:
+        await update.message.reply_text(
+            "Please use the buttons below:",
+            reply_markup=logged_in_menu()
+        )
+        return LOGGED_IN
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Cancelled. Type /start to begin again.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
-
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            CHOOSE_ACTION:   [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_action)],
-            SIGNIN_EMAIL:    [MessageHandler(filters.TEXT & ~filters.COMMAND, signin_email)],
-            SIGNIN_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, signin_password)],
-            SIGNIN_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, signin_username)],
-            LOGIN_EMAIL:     [MessageHandler(filters.TEXT & ~filters.COMMAND, login_email)],
-            LOGIN_PASSWORD:  [MessageHandler(filters.TEXT & ~filters.COMMAND, login_password)],
+            CHOOSE_ACTION:  [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_action)],
+            SIGNIN_EMAIL:   [MessageHandler(filters.TEXT & ~filters.COMMAND, signin_email)],
+            SIGNIN_PASSWORD:[MessageHandler(filters.TEXT & ~filters.COMMAND, signin_password)],
+            SIGNIN_NAME:    [MessageHandler(filters.TEXT & ~filters.COMMAND, signin_name)],
+            LOGIN_EMAIL:    [MessageHandler(filters.TEXT & ~filters.COMMAND, login_email)],
+            LOGIN_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, login_password)],
+            LOGGED_IN:      [MessageHandler(filters.TEXT & ~filters.COMMAND, logged_in_action)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
