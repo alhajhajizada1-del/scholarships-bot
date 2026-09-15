@@ -78,7 +78,8 @@ async def send_scholarships(update: Update):
 # ── /start — show only auth menu ──
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🎓 *Welcome to Afghanistan Scholarships!*\n\n"
+        "🎓 *Welcome to Afghanistan Scholarships!*\n"
+        "🌟 *Fully Funded / Free Scholarships for Afghans*\n\n"
         "We help Afghan students find and apply for scholarships worldwide.\n\n"
         "Please *Sign In* or *Log In* to continue:",
         parse_mode="Markdown",
@@ -127,7 +128,7 @@ async def signin_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return CHOOSE_ACTION
     context.user_data["signin_email"] = email
-    await update.message.reply_text("✅ Good! Now enter your email password:")
+    await update.message.reply_text("Enter Your Email Password:")
     return SIGNIN_PASSWORD
 
 async def signin_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
