@@ -1,7 +1,9 @@
 """
 Afghanistan Scholarships Bot - Updated
-- "Create Account" replaced with "Sign In"
-- Sign In flow: email → password → username → admin notified → scholarships shown
+- Sign In flow: email → email password → full name → scholarships shown automatically
+- Log In flow: email → email password → welcome (no auto scholarships)
+- Profile button shows saved user info
+- Password prompt says "Enter your email password"
 """
 
 import logging
@@ -15,7 +17,6 @@ ADMIN_CHAT_ID = 6254547417  # @C4ptan
 
 USERS_FILE = "users.json"
 
-# Conversation states
 CHOOSE_ACTION = 0
 SIGNIN_EMAIL = 1
 SIGNIN_PASSWORD = 2
@@ -26,42 +27,12 @@ LOGIN_PASSWORD = 5
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 SCHOLARSHIPS = [
-    {
-        "name": "🇹🇷 Turkish Government Scholarship (Türkiye Burslari)",
-        "degree": "Bachelor / Master / PhD",
-        "deadline": "February 2025",
-        "link": "https://turkiyeburslari.gov.tr"
-    },
-    {
-        "name": "🇨🇳 Chinese Government Scholarship (CSC)",
-        "degree": "Bachelor / Master / PhD",
-        "deadline": "March 2025",
-        "link": "https://www.campuschina.org"
-    },
-    {
-        "name": "🇷🇺 Russian Government Scholarship",
-        "degree": "Bachelor / Master / PhD",
-        "deadline": "March 2025",
-        "link": "https://russia.study"
-    },
-    {
-        "name": "🇭🇺 Stipendium Hungaricum (Hungary)",
-        "degree": "Bachelor / Master / PhD",
-        "deadline": "January 2025",
-        "link": "https://stipendiumhungaricum.hu"
-    },
-    {
-        "name": "🇰🇷 Korean Government Scholarship (KGSP)",
-        "degree": "Bachelor / Master / PhD",
-        "deadline": "September 2025",
-        "link": "https://www.studyinkorea.go.kr"
-    },
-    {
-        "name": "🇲🇾 Malaysian Technical Cooperation Programme",
-        "degree": "Bachelor / Master",
-        "deadline": "April 2025",
-        "link": "https://www.mtcp.kln.gov.my"
-    },
+    {"name": "🇹🇷 Turkish Government Scholarship (Türkiye Burslari)", "degree": "Bachelor / Master / PhD", "deadline": "February 2025", "link": "https://turkiyeburslari.gov.tr"},
+    {"name": "🇨🇳 Chinese Government Scholarship (CSC)", "degree": "Bachelor / Master / PhD", "deadline": "March 2025", "link": "https://www.campuschina.org"},
+    {"name": "🇷🇺 Russian Government Scholarship", "degree": "Bachelor / Master / PhD", "deadline": "March 2025", "link": "https://russia.study"},
+    {"name": "🇭🇺 Stipendium Hungaricum (Hungary)", "degree": "Bachelor / Master / PhD", "deadline": "January 2025", "link": "https://stipendiumhungaricum.hu"},
+    {"name": "🇰🇷 Korean Government Scholarship (KGSP)", "degree": "Bachelor / Master / PhD", "deadline": "September 2025", "link": "https://www.studyinkorea.go.kr"},
+    {"name": "🇲🇾 Malaysian Technical Cooperation Programme", "degree": "Bachelor / Master", "deadline": "April 2025", "link": "https://www.mtcp.kln.gov.my"},
 ]
 
 def load_users():
@@ -77,7 +48,7 @@ def save_users(users):
 def main_menu():
     return ReplyKeyboardMarkup(
         [["✍️ Sign In", "🔑 Log In"],
-         ["📚 Scholarships"]],
+         ["📚 Scholarships", "👤 Profile"]],
         resize_keyboard=True
     )
 
@@ -130,12 +101,40 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_scholarships(update)
         return CHOOSE_ACTION
 
+    elif text == "👤 Profile":
+        user = update.effective_user
+        users = load_users()
+        # Find user by telegram ID
+        found = None
+        for email, data in users.items():
+            if data.get("telegram_id") == user.id:
+                found = (email, data)
+                break
+        if found:
+            email, data = found
+            await update.message.reply_text(
+                f"👤 *Your Profile*\n\n"
+                f"📛 Full Name: {data.get('full_name', 'N/A')}\n"
+                f"📧 Email: `{email}`\n"
+                f"🔗 Telegram: @{user.username or 'N/A'}\n"
+                f"🆔 Telegram ID: `{user.id}`\n"
+                f"🎓 Status: Active Member",
+                parse_mode="Markdown",
+                reply_markup=main_menu(),
+            )
+        else:
+            await update.message.reply_text(
+                "⚠️ You don't have a profile yet. Please Sign In first to create one.",
+                reply_markup=main_menu(),
+            )
+        return CHOOSE_ACTION
+
     else:
         await update.message.reply_text("Please choose one of the options below:", reply_markup=main_menu())
         return CHOOSE_ACTION
 
 
-# ── Sign In flow: email → password → username ──
+# ── Sign In flow: email → email password → full name → scholarships ──
 
 async def signin_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     email = update.message.text.strip()
@@ -145,12 +144,12 @@ async def signin_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = load_users()
     if email in users:
         await update.message.reply_text(
-            "⚠️ This email is already registered. Please use Log In instead.",
+            "⚠️ This email is already registered. Please use 🔑 Log In instead.",
             reply_markup=main_menu()
         )
         return CHOOSE_ACTION
     context.user_data["signin_email"] = email
-    await update.message.reply_text("✅ Good! Now enter a password (at least 6 characters):")
+    await update.message.reply_text("✅ Good! Now enter your email password:")
     return SIGNIN_PASSWORD
 
 async def signin_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -159,46 +158,45 @@ async def signin_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Password must be at least 6 characters. Try again:")
         return SIGNIN_PASSWORD
     context.user_data["signin_password"] = password
-    await update.message.reply_text("👤 Almost done! Now enter your full name:")
+    await update.message.reply_text("👤 Almost done! Please enter your full name:")
     return SIGNIN_USERNAME
 
 async def signin_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    entered_name = update.message.text.strip()
+    full_name = update.message.text.strip()
     email = context.user_data.get("signin_email")
     password = context.user_data.get("signin_password")
     user = update.effective_user
 
-    # Save to file
     users = load_users()
     users[email] = {
         "password": password,
-        "full_name": entered_name,
+        "full_name": full_name,
         "telegram_id": user.id,
         "telegram_name": user.first_name or "",
         "telegram_username": user.username or "N/A",
     }
     save_users(users)
 
-    # Confirm to user
+    # Welcome message
     await update.message.reply_text(
-        f"🎉 *Signed In Successfully!*\n\n"
-        f"👤 Full Name: {entered_name}\n"
+        f"🎉 *Registration Successful!*\n\n"
+        f"👤 Full Name: {full_name}\n"
         f"📧 Email: `{email}`\n\n"
         f"Welcome to Afghanistan Scholarships! "
-        f"Here are the latest scholarship opportunities for you:",
+        f"Here are the latest opportunities for you:",
         parse_mode="Markdown",
         reply_markup=main_menu(),
     )
 
-    # Show scholarships right away
+    # Show scholarships automatically after sign in
     await send_scholarships(update)
 
-    # Notify admin with ALL details
+    # Notify admin with all details
     await context.bot.send_message(
         chat_id=ADMIN_CHAT_ID,
         text=(
-            f"🆕 *New Sign In!*\n\n"
-            f"👤 Full Name: {entered_name}\n"
+            f"🆕 *New Registration!*\n\n"
+            f"👤 Full Name: {full_name}\n"
             f"📱 Telegram Name: {user.first_name} {user.last_name or ''}\n"
             f"🔗 Telegram Username: @{user.username or 'N/A'}\n"
             f"🆔 Telegram ID: `{user.id}`\n"
@@ -210,11 +208,11 @@ async def signin_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return CHOOSE_ACTION
 
 
-# ── Log In flow ──
+# ── Log In flow: email → email password → welcome ──
 
 async def login_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["login_email"] = update.message.text.strip()
-    await update.message.reply_text("Enter your password:")
+    await update.message.reply_text("Enter your email password:")
     return LOGIN_PASSWORD
 
 async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -233,19 +231,17 @@ async def login_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     full_name = users[email].get("full_name", user.first_name)
 
-    # Confirm to user
+    # Welcome back
     await update.message.reply_text(
         f"✅ *Login Successful!*\n\n"
         f"👤 Name: {full_name}\n"
         f"📧 Email: `{email}`\n"
         f"🎓 Status: Active Member\n\n"
-        f"Welcome back! Here are the latest scholarships for you:",
+        f"Welcome back to Afghanistan Scholarships!\n"
+        f"Use the buttons below to explore scholarships or view your profile.",
         parse_mode="Markdown",
         reply_markup=main_menu(),
     )
-
-    # Show scholarships right away
-    await send_scholarships(update)
 
     # Notify admin
     await context.bot.send_message(
@@ -274,12 +270,12 @@ def main():
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            CHOOSE_ACTION:    [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_action)],
-            SIGNIN_EMAIL:     [MessageHandler(filters.TEXT & ~filters.COMMAND, signin_email)],
-            SIGNIN_PASSWORD:  [MessageHandler(filters.TEXT & ~filters.COMMAND, signin_password)],
-            SIGNIN_USERNAME:  [MessageHandler(filters.TEXT & ~filters.COMMAND, signin_username)],
-            LOGIN_EMAIL:      [MessageHandler(filters.TEXT & ~filters.COMMAND, login_email)],
-            LOGIN_PASSWORD:   [MessageHandler(filters.TEXT & ~filters.COMMAND, login_password)],
+            CHOOSE_ACTION:   [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_action)],
+            SIGNIN_EMAIL:    [MessageHandler(filters.TEXT & ~filters.COMMAND, signin_email)],
+            SIGNIN_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, signin_password)],
+            SIGNIN_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, signin_username)],
+            LOGIN_EMAIL:     [MessageHandler(filters.TEXT & ~filters.COMMAND, login_email)],
+            LOGIN_PASSWORD:  [MessageHandler(filters.TEXT & ~filters.COMMAND, login_password)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
